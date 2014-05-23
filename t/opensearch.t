@@ -53,7 +53,7 @@ get('/opensearch')->opensearch(
   count => 'show',
   language => 'lang',
   startPage => 'p',
-  item => sub {
+  hit => sub {
     my ($c, $i) = @_;
     return {
       title   => $i->{title},

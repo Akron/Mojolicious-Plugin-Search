@@ -15,18 +15,15 @@ sub register {
 
   # Check that search is loaded in advance
 
+  # Load parameter from Config file
+  if (my $config_param = $mojo->config('Search-OpenSearch')) {
+    $param = { %$config_param, %$param };
+  };
+
   # Add templates
   push @{$mojo->renderer->paths}, catdir(dirname(__FILE__), 'OpenSearch','templates');
 
   my $helpers = $mojo->renderer->helpers;
-
-  # Get callback plugin
-#  unless (exists $helpers->{callback}) {
-#    $mojo->plugin('Util::Callback');
-#  };
-
-  # Check for 'search' callback
-#  $mojo->callback([qw/search/] => $param, -once);
 
   # Get endpoint plugin
   unless (exists $helpers->{endpoint}) {
@@ -44,27 +41,16 @@ sub register {
   # Simple description
   $param->{description} //= 'OpenSearch';
 
-  # # Per Hook nachschauen, ob per shortcut der Pfad besetzt ist.
-
-  # # Establish 'render_opensearch' helper
-  # $mojo->helper(
-  #   render_opensearch => sub {
-  #    my $c = shift;
-  #    my $query = shift;
-  #    my $result = shift;
-  #  }
-  #);
-
   # Establish 'opensearch' shortcut
   $mojo->routes->add_shortcut(
     opensearch => sub {
       my $r = shift;
       my %osparam = @_;
 
-      my $item = delete $osparam{item};
+      my $hit = delete $osparam{hit};
 
-      if (!$item || ref $item ne 'CODE') {
-	$mojo->log->error('No item callback established');
+      if (!$hit || ref $hit ne 'CODE') {
+	$mojo->log->error('No hit callback established');
 	return;
       };
 
@@ -78,7 +64,8 @@ sub register {
       };
 
       # Optional parameters
-      foreach (@osattr, qw/inputEncoding outputEncoding/) {
+      foreach (@osattr) {
+	# qw/inputEncoding outputEncoding/
 	$osparam{$_} //= $_ ;
 	$hash{ $osparam{$_} } = '{' . $_ . '?}';
       };
@@ -126,24 +113,8 @@ sub register {
 
 	  $c->render(
 	    template => 'opensearch/results',
-	    item => $item
+	    hit => $hit
 	  );
-
-	  # my $result = $c->callback( opensearch => \%query );
-
-	  # Todo: Transform outputEncoding
-	  # $c->render(text => $result);
-
-	  # Await:
-	  # totalResults
-	  # itemsPerPage
-	  # updated
-
-#   <opensearch:totalResults>4230000</opensearch:totalResults>
-#   <opensearch:startIndex>21</opensearch:startIndex>
-#   <opensearch:itemsPerPage>10</opensearch:itemsPerPage>
-#   <opensearch:Query role="request" searchTerms="New York History" startPage="1" />
-
 	}
       );
     }
@@ -172,51 +143,123 @@ sub register {
     })->name('opensearch-description');
 };
 
+
 1;
+
 
 __END__
 
+=pod
 
-plugin 'Search::OpenSearch' => {
-  short_name => '',
-  description => '',
-  language => 'en-us',
-  long_name => '',
-  developer => '',
-  contact => '',
-  adult_content => '',
-  attribution => '',
-  syndication_right => ''
-};
+=encoding utf8
+
+=head1 NAME
+
+Mojolicious::Plugin::Search::OpenSearch - OpenSearch for Mojolicious
 
 
-$r->get('/search/open')->opensearch(
-  searchTerms => 'q',
-  startPage => 'page',
-  item => sub {
-    my ($c, $hit) = @_;
-    return {
-      title => $hit->{title},
-      link => $hit->{url},
-      snippet => $hit->{highlight}
+=head1 SYNOPSIS
+
+
+  use Mojolicious::Lite;
+
+  plugin Search => {};
+
+  plugin 'Search::OpenSearch' => {
+    short_name => 'My search',
+    description => 'Search my site using OpenSearch'
+  };
+
+  get('/search/open')->opensearch(
+    hit => sub {
+      my ($c, $hit) = @_;
+      return {
+        title => $hit->{title},
+        link => $hit->{url},
+        snippet => $hit->{highlight}
+      }
     }
-  }
-);
+  );
 
 
-optional
+=head1 DESCRIPTION
 
-'file' => 'path of opensearch.xml' (defaults to C<./well-known/opensearch.xml>)
+L<Mojolicious::Plugin::Search::OpenSearch> is an L<OpenSearch|http://www.opensearch.org>
+extension to L<Mojolicious::Plugin::Search>.
 
-count =>
-startPage
-startIndex
-startPage
-language
-format
-searchTerms
-inputEncoding
-outputEncoding
+B<This is early software, please use it with care.>
 
-endpoint 'opensearch-description'
-defaults to C<./well-known/opensearch.xml>
+=head1 METHODS
+
+L<Mojolicious::Plugin::Search::OpenSearch> inherits all methods from
+L<Mojolicious::Plugin> and implements the following new ones.
+
+
+=head2 register
+
+Called when registering the plugin.
+All parameters can be set either on registration or as part
+of the configuration file with the key C<Search-OpenSearch>.
+
+Accepts the parameters C<short_name>, C<description>, C<language>,
+C<long_name>, C<developer>, C<contact>, C<adult_content>, C<attribution>,
+and C<syndication_right>.
+See the L<specification|http://www.opensearch.org/Specifications/OpenSearch/1.1#OpenSearch_description_document> for further information on these attributes.
+Both C<short_name> and C<description> are mandatory.
+
+Additionally supports the attribute C<file>, setting the path to the
+description document. Defaults to C</.well-known/opensearch.xml>.
+
+
+=head1 SHORTCUTS
+
+=head2 opensearch
+
+  get('/myopensearch')->opensearch(
+    searchTerms => 'q',
+    startPage => 'page',
+    hit => sub {
+      my ($c, $hit) = @_;
+      return {
+        title => $hit->{title},
+        link => $hit->{url},
+        snippet => $hit->{highlight}
+      }
+    }
+  );
+
+Defines the endpoint for C<rss> and C<atom> responses.
+Accepts parameters to rewrite the name of the following
+query parameters supported by OpenSearch: C<count>, C<startPage>,
+C<startIndex>, C<language> and C<searchTerms>.
+See the L<specification|http://www.opensearch.org/Specifications/OpenSearch/1.1#OpenSearch_URL_template_syntax> for further information on these attributes.
+
+=over 2
+
+=item B<hit>
+
+In adition to the parameters mentioned above, the C<hit> parameter expects a
+callback function, that is called for each hit.
+Passed parameters is the controller object and the hit object.
+Expects a hash reference with string values for C<title>, C<link> and C<snippet>
+of the hit.
+
+=back
+
+Establishes an L<endpoint|Mojolicious::Plugin::Util::Endpoint> with
+the name C<opensearch>.
+
+
+=head1 AVAILABILITY
+
+  https://github.com/Akron/Mojolicious-Plugin-Search
+
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright (C) 2014, L<Nils Diewald|http://nils-diewald.de/>.
+
+This program is free software, you can redistribute it
+and/or modify it under the terms of the Artistic License version 2.0.
+
+=cut

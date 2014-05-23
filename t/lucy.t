@@ -79,7 +79,7 @@ get '/' => sub {
   my $template =<< 'TEMPLATE';
 <!DOCTYPE html>
 <html>
-  <head><title><%= stash 'search.query' %></title></head>
+  <head><title><%= stash 'search.searchTerms' %></title></head>
   <body>
 %= search highlight => 'content', begin
 <p>Hits: <span id="count"><%= stash 'search.totalResults' %></span></p>
@@ -97,9 +97,9 @@ TEMPLATE
 
   return $c->render(
     inline => $template,
-    'search.query'      => scalar $c->param('q'),
-    'search.startPage'  => scalar $c->param('page'),
-    'search.count'      => scalar $c->param('count')
+    'search.searchTerms' => scalar $c->param('q'),
+    'search.startPage'   => scalar $c->param('page'),
+    'search.count'       => scalar $c->param('count')
   );
 };
 

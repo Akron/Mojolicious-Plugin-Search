@@ -1,6 +1,12 @@
 lib/Mojolicious/Plugin/Search.pm
 lib/Mojolicious/Plugin/Search/Lucy.pm
+lib/Mojolicious/Plugin/Search/OpenSearch.pm
+lib/Mojolicious/Plugin/Search/OpenSearch/templates/opensearch/description.xml.ep
+lib/Mojolicious/Plugin/Search/OpenSearch/templates/opensearch/results.atom.ep
+lib/Mojolicious/Plugin/Search/OpenSearch/templates/opensearch/results.rss.ep
+lib/Mojolicious/Plugin/Search/OpenSearch/templates/opensearch/tags.xml.ep
 t/lucy.t
+t/opensearch.t
 t/sample/amend1.txt
 t/sample/amend2.txt
 t/sample/amend3.txt

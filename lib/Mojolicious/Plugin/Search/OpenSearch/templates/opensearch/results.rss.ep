@@ -13,7 +13,7 @@
 %= search begin
 %= include 'opensearch/tags', format => 'xml';
 %=   search_hits begin
-%    my $os = $item->($self, $_);
+%    my $os = $hit->($self, $_);
     <item>
       <title><%= $os->{title} %></title>
       <link><%= $os->{link} %></link>

@@ -25,7 +25,6 @@ our $UNKNOWN = ' has an unknown field type';
 # Store parameters for the highlighter and the path
 has 'path';
 
-
 # The searcher object
 sub searcher {
   my $plugin = shift;
@@ -265,7 +264,7 @@ sub register {
 # Search method
 sub search {
   my ($self, $c, %param) = @_;
-  my $query = $c->stash('search.query') or return '';
+  my $query = $c->stash('search.searchTerms') or return '';
 
   # Query may be a string
   $query = $self->query_obj($query) unless blessed $query;
@@ -319,7 +318,7 @@ sub search {
   my $hits = $self->searcher->hits(
     query      => $query,
     offset     => $param{startIndex} // $start_index // 0,
-    num_wanted => $param{count}      // $count
+    num_wanted => $count
   );
 
   # Set total result number
@@ -694,8 +693,8 @@ parameters as the C<highlight> parameter in the configuration.
 
 =back
 
-The stash parameters C<search.count>, C<search.startPage> and C<search.count>
-are recognized. The stash parameter C<search.query> can either contain a
+The stash parameters C<search.count>, C<search.startPage> are recognized.
+The stash parameter C<search.searchTerms> can either contain a
 query string or a L<Lucy::Search::Query> object.
 
 

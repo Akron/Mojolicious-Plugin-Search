@@ -4,8 +4,8 @@ use Mojo::Util qw/camelize/;
 use Mojo::ByteStream 'b';
 
 our $VERSION = '0.01';
-our $COUNT = 25; # Default number of displayed hits
 
+has 'items_per_page' => 25;
 
 # Register the plugin
 sub register {
@@ -19,6 +19,8 @@ sub register {
 
   # Get specific search engine
   my $engine = camelize(delete $param->{engine} // __PACKAGE__ . '::Lucy');
+
+  $plugin->items_per_page($param->{items_per_page}) if $param->{items_per_page};
 
   # Engine is relative
   if (index($engine, '::') < 0) {
@@ -42,16 +44,20 @@ sub register {
       $c->stash('search.count' => (
 	delete $param{count} //
 	  scalar($c->param('count')) //
-	    $param->{count}
-	      // $COUNT
-	  ));
+	    $plugin->items_per_page
+	  )) unless $c->stash('search.count');
 
       # Get startPage
       $c->stash('search.startPage' => (
 	delete $param{startPage} //
 	  scalar($c->param('startPage')) //
 	    1
-	  ));
+	  )) unless $c->stash('search.startPage');
+
+      # Set items_per_page
+      my $items_per_page =
+	$c->stash('search.count') > $plugin->items_per_page ?
+	  $plugin->items_per_page : $c->stash('search.count');
 
       # Make sure the values are numerical
       foreach (map { 'search.' . $_ } qw/startPage count/) {
@@ -60,6 +66,7 @@ sub register {
 	};
       };
 
+      $c->stash('search.itemsPerPage' => $items_per_page);
       $c->stash('search.totalResults' => 0);
       $c->stash('search.hits' => []);
 
@@ -126,6 +133,7 @@ Mojolicious::Plugin::Search - Search Engines for Mojolicious
   # Load plugin in Mojolicious
   plugin Search => {
     engine => 'Lucy',
+    items_per_page => 25,
     schema => {
       content => {
         type => 'fulltext',
@@ -213,6 +221,7 @@ B<This is early software, please use it with care.>
 L<Mojolicious::Plugin::Search> inherits all methods from
 L<Mojolicious::Plugin> and implements the following new ones.
 
+
 =head2 register
 
 Called when registering the plugin.
@@ -222,6 +231,10 @@ of the configuration file with the key C<Search>.
 Accepts the following parameters:
 
 =over 2
+
+=item B<items_per_page>
+
+Set the default number of hits shown per page.
 
 =item B<engine>
 
@@ -246,7 +259,7 @@ Starts a code block for searches. Accepts engine specific parameters.
 
 The parameters
 C<query>, C<startIndex>, and C<count> can be passed
-using the stash if prefixed with C<lucy.>.
+using the stash if prefixed with C<search.>.
 
 In C<search> the stash value C<search.totalResults> will contain
 the number of total results (if available).
@@ -267,6 +280,12 @@ C<count> value).
 
 Iterates over all search hits for a certain query, contains a hit object
 in C<$_>. The concrete realization is engine specific.
+
+=head1 DEPENDENCIES
+
+L<Mojolicious> (best with SSL support),
+L<Lucy>,
+L<Mojolicious::Plugin::Util::Endpoint>.
 
 
 =head1 AVAILABILITY
