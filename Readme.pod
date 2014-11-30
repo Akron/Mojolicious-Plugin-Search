@@ -13,8 +13,10 @@ Mojolicious::Plugin::Search - Search Engines for Mojolicious
 
   # Load plugin in Mojolicious
   plugin Search => {
-    engine => 'Lucy',
     items_per_page => 25,
+
+    # Engine specific configuration:
+    engine => 'Lucy',
     schema => {
       content => {
         type => 'fulltext',
@@ -31,18 +33,17 @@ Mojolicious::Plugin::Search - Search Engines for Mojolicious
         indexed => 0
       }
     },
+
     # Initialize index with some documents
     on_init => sub {
-      my $mojo = shift;
-      my $lucy = $mojo->lucy;
-      $lucy->add(
+      shift->add(
         {
-  	  title => 'My first Ballon',
+          title => 'My first Ballon',
 	  content => 'Please find me!',
-	  url => '/page1'
+          url => '/page1'
         },
         {
-  	  title => 'My second Ballon',
+          title => 'My second Ballon',
 	  content => 'Thanks for searching',
 	  url => '/page2'
         }
@@ -51,20 +52,21 @@ Mojolicious::Plugin::Search - Search Engines for Mojolicious
   };
 
   get '/' => sub {
-    my $c = shift;
-    # Set query based on parameter
-    $c->stash('search.query' => scalar $c->param('q'));
-    $c->render('index');
+    shift->render('index');
   };
 
   app->start;
 
   __DATA__
 
-  @@ layout/default.html.ep
+  @@ layouts/default.html.ep
+  <!DOCTYPE html>
   <html>
     <head><title><%= title %></title></head>
-    <body><% content %></body>
+    <body>
+      <h1><%= title %></h1>
+  %= content
+    </body>
   </html>
 
   @@ index.html.ep
@@ -75,15 +77,16 @@ Mojolicious::Plugin::Search - Search Engines for Mojolicious
   %=   search_field 'q'
   % end
 
-  %# Show search results
-  %= search begin
-  <p>Found <%= stash 'search.totalResults' %> matches</p>
+  %= search query => param('q'), begin
+  % title 'Search for ' . search->query;
+
+  <p>Found <%= search->total_results %> matches</p>
   <ul>
-  %=   search_hits begin
-  <li>
-    <h3><%= link_to $_->{title}, $_->{url} %></h3>
-    <p><%= $_->{content} %></p>
-  </li>
+  %=  search_results begin
+    <li>
+      <h2><%= link_to $_->{title}, $_->{url} %></h2>
+      <p><%= $_->{content} %></p>
+    </li>
   %   end
   </ul>
   % end
@@ -94,7 +97,7 @@ Mojolicious::Plugin::Search - Search Engines for Mojolicious
 L<Mojolicious::Plugin::Search> is a base plugin to add
 search capabilities to Mojolicious.
 
-B<This is early software, please use it with care.>
+B<This is early software, please use it with care! Things may change until it is on CPAN!>
 
 
 =head1 METHODS
@@ -107,7 +110,9 @@ L<Mojolicious::Plugin> and implements the following new ones.
 
 Called when registering the plugin.
 All parameters can be set either on registration or as part
-of the configuration file with the key C<Search>.
+of the configuration file with the key C<Search>
+(with the configuration file having the higher precedence).
+
 
 Accepts the following parameters:
 
@@ -115,13 +120,15 @@ Accepts the following parameters:
 
 =item B<items_per_page>
 
-Set the default number of hits shown per page.
+Set the maximum number of hits shown per page.
+
 
 =item B<engine>
 
-A L<Mojolicious::Plugin::Search> engine. Defaults to
+A L<Mojolicious::Plugin::Search> engine.
+Defaults to
 L<Lucy|Mojolicious::Plugin::Search::Lucy>. See
-L<Mojolicious::Plugin::Lucy> for further information.
+L<Mojolicious::Plugin::Search::Lucy> for further information.
 
 =back
 
@@ -132,35 +139,81 @@ All further parameters are passed to the chosen engine.
 
 =head2 search
 
-  %= search begin
+  # In controller (blocking)
+  my $result = $c->search(q => 'test');
+  # print $result->total_results;
+  # print $result->hit(2)->title;
+
+  # In controller (non-blocking)
+  $c->search(
+    query => 'name',
+    start_page => 4,
+    count => 25,
+    cb => sub {
+      my $index = shift;
+      $c->render(text => 'Found ' . $index->total_results . ' matches!');
+    }
+  );
+
+  # In Templates (blocking)
+  %= search query => 'test', begin
   %# ...
   % end
 
-Starts a code block for searches. Accepts engine specific parameters.
+Initializes a search.
 
-The parameters
-C<query>, C<startIndex>, and C<count> can be passed
-using the stash if prefixed with C<search.>.
+The parameter C<query> defines the query terms,
+C<start_page> defines the numerical starting page of the search,
+C<count> defines the number of results that should be shown per page.
+If C<count> is greater than C<items_per_page>, it will be limited to that.
 
-In C<search> the stash value C<search.totalResults> will contain
-the number of total results (if available).
-The stash value C<search.hits> will contain an array reference
-including all matches.
-The stash value C<search.itemsPerPage> will contain the number
-of matches shown per page (this may differ from the requested
-C<count> value).
+The parameter C<cb> can be used to pass a callback method to be evaluated
+(e.g., in case of a non-blocking search). The parameter C<template> may define
+a template to render after a search (also for non-blocking searches).
+
+C<query> and C<start_page> may also be defined in advanced
+using the L<Mojolicious::Controller/stash|stash>, if prefixed with C<search.>.
+C<count> may also be set as C<search.items_per_page>, overriding
+the plugin default value limit.
+
+In addition to theses parameters, L</search|search> accepts arbitrary engine
+specific parameters.
+
+When called without C<cb> or C<template>, the method returns a
+L<Mojolicious::Plugin::Search::Index|Index object>,
+representing search parameters and probably results.
+When called with C<cb> the callback is executed with the
+L<Mojolicious::Plugin::Search::Index|Index object> as the first parameter.
+
+In templates, L</search|search> can be used either as a tag helper, expecting a
+nested L</search_results|search_results> block for displaying the results
+(This usage is, however, not recommended for long-term searches!),
+or as a proxy object for accessing L<Mojolicious::Plugin::Search::Index|Index object>.
+
+  %# In templates
+  <p>Found <%= search->total_results %> matches</p>
+  <p>Show page <%= search->start_page %>/<%= search->total_pages %></p>
 
 
-=head2 search_hits
+=head2 search_results
 
   %= search begin
-  %=  search_hits begin
-  %# ...
+  %=  search_results begin
+    <p><%= $_->{title} %></p>
+    <p><%= $_->{content} %></p>
   %   end
   % end
 
-Iterates over all search hits for a certain query, contains a hit object
-in C<$_>. The concrete realization is engine specific.
+Iterates over all hits for a certain query, contains a hit object
+in C<$_> and the stash value C<search.hit>.
+The concrete realization of the hit is engine specific.
+
+
+=head1 ENGINES
+
+L<Mojolicious::Plugin::Search> is bundled with an
+L<Apache Lucy|Mojolicious::Plugin::Search::Lucy> engine.
+
 
 =head1 DEPENDENCIES
 

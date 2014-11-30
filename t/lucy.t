@@ -3,7 +3,7 @@ use Test::Mojo;
 use Test::More;
 use Mojolicious::Lite;
 use Mojo::ByteStream 'b';
-use lib '../lib';
+use lib '../lib', 'lib', 't';
 use File::Temp 'tempdir';
 
 my $tempdir = tempdir();
@@ -35,11 +35,16 @@ plugin Search => {
     excerpt_length => 120
   },
   on_init => sub {
-    my $mojo = shift;
-    $mojo->log->info('Initial indexing');
-    my $path = $mojo->home . '/sample';
+    my $engine = shift;
+    my $app = $engine->controller->app;
+    $app->log->info('Initial indexing');
+    my $path = $app->home . '/sample';
 
-    opendir(SAMPLE, $path);
+    unless (opendir(SAMPLE, $path)) {
+      fail("Unable to open $path");
+      return;
+    };
+
     my @docs;
     foreach my $filename (readdir(SAMPLE)) {
       if ($filename =~ /\.txt$/) {
@@ -60,64 +65,173 @@ plugin Search => {
     };
     closedir(SAMPLE);
 
-    $mojo->lucy->add( @docs );
+    $engine->add( @docs );
   }
-  # truncate => 1,
-  # language => 'de',
-  # highlighter => {
-  #   excerpt_length => 200,
-  #   pre_tag => '<span class="match">',
-  #   post_tag => '</span>'
-  # }
-  # fields => {},
-  # on_init => sub {},
 };
 
+# search with stash
 get '/' => sub {
   my $c = shift;
   my $query = $c->param('q');
   my $template =<< 'TEMPLATE';
 <!DOCTYPE html>
 <html>
-  <head><title><%= stash 'search.searchTerms' %></title></head>
-  <body>
 %= search highlight => 'content', begin
-<p>Hits: <span id="count"><%= stash 'search.totalResults' %></span></p>
-%=   search_hits begin
+  <head><title><%= search->query %></title></head>
+  <body>
+<p>Hits: <span id="totalResults"><%= search->total_results %></span></p>
+%=   search_results begin
 <div>
   <h1><a href="<%= $_->{url} %>"><%= $_->{title} %></a></h1>
-  <p class="excerpt"><%= lucy_snippet %></p>
+  <p class="excerpt"><%= search->snippet %></p>
   <p class="score"><%= $_->get_score %></p>
 </div>
 %   end
-% end
   </body>
+% end
 </html>
 TEMPLATE
 
   return $c->render(
     inline => $template,
-    'search.searchTerms' => scalar $c->param('q'),
-    'search.startPage'   => scalar $c->param('page'),
-    'search.count'       => scalar $c->param('count')
+    'search.query'      => scalar $c->param('q'),
+    'search.start_page' => scalar $c->param('page'),
+    'search.count'      => scalar $c->param('count')
   );
 };
 
+get '/search' => sub {
+  my $c = shift;
+  my $template =<< 'TEMPLATE';
+<!DOCTYPE html>
+<html>
+%= search query => param('q'), start_page => param('page'), count => param('count'), highlight => 'content', begin
+  <head><title><%= search->query %></title></head>
+  <body>
+<p>Hits: <span id="totalResults"><%= search->total_results %></span></p>
+%=   search_results begin
+<div>
+  <h1><a href="<%= $_->{url} %>"><%= $_->{title} %></a></h1>
+  <p class="excerpt"><%= search->snippet %></p>
+  <p class="score"><%= $_->get_score %></p>
+</div>
+%   end
+  </body>
+% end
+</html>
+TEMPLATE
+  return $c->render(inline => $template);
+};
+
+
 my $t = Test::Mojo->new;
 
+# Search with stash
 $t->get_ok('/?q=test')
   ->text_is('head title', 'test')
-  ->text_is('#count', 1)
+  ->text_is('#totalResults', 1)
   ->text_is('h1 a', 'Article VI')
   ->element_exists('h1 a[href=/text/art6.txt]')
   ->text_like('p.excerpt', qr/Office/);
 
 $t->get_ok('/?q=the')
   ->text_is('head title', 'the')
-  ->text_is('#count', 51)
+  ->text_is('#totalResults', 51)
   ->element_exists('h1 a[href=/text/amend10.txt]')
   ->text_like('p.excerpt span.match', qr/^the$/i);
 
+# Search with params
+$t->get_ok('/search?q=test')
+  ->text_is('head title', 'test')
+  ->text_is('#totalResults', 1)
+  ->text_is('h1 a', 'Article VI')
+  ->element_exists('h1 a[href=/text/art6.txt]')
+  ->text_like('p.excerpt', qr/Office/);
+
+$t->get_ok('/search?q=the')
+  ->text_is('head title', 'the')
+  ->text_is('#totalResults', 51)
+  ->element_exists('h1 a[href=/text/amend10.txt]')
+  ->text_like('p.excerpt span.match', qr/^the$/i);
+
+# Search directly - access results
+my $c = $t->app->build_controller;
+my $e = $c->search(query => 'test');
+is($e->total_results, 1, 'Total Results');
+is($e->query, 'test', 'Query');
+is($e->hit(0)->{title}, 'Article VI', 'Title');
+is($e->hit(0)->{url}, '/text/art6.txt' , 'URL');
+like($e->hit(0)->{content}, qr/^All\s*Debts contracted/ , 'Content');
+is($e->results->[0]->{title}, 'Article VI', 'Title');
+is($e->results->[0]->{url}, '/text/art6.txt' , 'URL');
+like($e->results->[0]->{content}, qr/Office/ , 'Content');
+ok(!defined $e->hit(1), 'No more hits');
+
+$e = $c->search(query => 'the');
+is($e->total_results, 51, 'Total Results');
+is($e->query, 'the', 'Query');
+
+is($e->start_page,    1, 'Current page');
+is($e->items_per_page, 25, 'Items per page');
+is($e->total_pages,     3, 'Total pages');
+is($e->start_index,     0, 'start index');
+
+is($e->hit(0)->{title}, 'Amendment X', 'Title');
+is($e->hit(0)->{url}, '/text/amend10.txt' , 'URL');
+like($e->hit(0)->{content}, qr/^The\s*powers not delegated/, 'Content');
+
+is($e->results->[1]->{title}, 'Amendment XVIII', 'Title');
+is($e->results->[1]->{url}, '/text/amend18.txt' , 'URL');
+like($e->results->[1]->{content}, qr/^1\.\s*After one year/, 'Content');
+
+
+# Search non-blocking
+get '/search-nb' => sub {
+  my $c = shift;
+  $c->search(
+    query => $c->param('q'),
+    count => $c->param('count'),
+    start_page => $c->param('page'),
+    highlight => 'content',
+    cb => sub {
+      return $c->render(template => 'search');
+    }
+  );
+};
+
+# Check non-blocking
+$t->get_ok('/search-nb?q=the')
+  ->text_is('head title', 'the')
+  ->text_is('#totalResults', 51)
+  ->element_exists('h1 a[href=/text/amend10.txt]')
+  ->text_like('p.excerpt span.match', qr/^the$/i);
+
+$t->get_ok('/search-nb?q=test')
+  ->text_is('head title', 'test')
+  ->text_is('#totalResults', 1)
+  ->text_is('h1 a', 'Article VI')
+  ->element_exists('h1 a[href=/text/art6.txt]')
+  ->text_like('p.excerpt', qr/Office/);
+
+
 done_testing;
+
+__DATA__
+
+@@ search.html.ep
+<!DOCTYPE html>
+<html>
+  <head><title><%= search->query %></title></head>
+  <body>
+    <p>Hits: <span id="totalResults"><%= search->total_results %></span></p>
+%= search_results begin
+    <div>
+      <h1><a href="<%= $_->{url} %>"><%= $_->{title} %></a></h1>
+      <p class="excerpt"><%= search->snippet %></p>
+      <p class="score"><%= $_->get_score %></p>
+    </div>
+% end
+  </body>
+</html>
 
 __END__

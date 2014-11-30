@@ -1,7 +1,7 @@
 package Mojolicious::Plugin::Search::Lucy;
 use Mojo::Base 'Mojolicious::Plugin';
-
 use Mojo::ByteStream 'b';
+
 use Scalar::Util qw/blessed weaken/;
 use File::Temp 'tempdir';
 
@@ -22,30 +22,186 @@ use Lucy::Highlight::Highlighter;
 
 our $UNKNOWN = ' has an unknown field type';
 
-# Store parameters for the highlighter and the path
-has 'path';
+# Establish engine
+sub register {
+  my ($plugin, $app, $param) = @_;
+  $param ||= {};
 
-# The searcher object
-sub searcher {
-  my $plugin = shift;
+  # Create a schema
+  my $schema = $param->{schema};
+  unless ($schema) {
+    $app->log->warn('No schema given for ' . __PACKAGE__);
+    return;
+  };
 
-  # Has only to be rebuild if something changed
-  return ($plugin->{searcher} //= Lucy::Search::IndexSearcher->new(
-    index => $plugin->path
-  ));
+  $plugin->{truncate} = delete $param->{truncate};
+
+  # Get language information
+  my $language = $param->{language} // 'en';
+
+  # Set highlighter parameters
+  $plugin->_highlighter($param->{highlighter} // {});
+
+  # Possibly an analyzer is given
+  my $analyzer = $param->{analyzer};
+
+  # Get fields
+  my $fields = $param->{fields} // {};
+
+  # Iterate through all schema keys
+  foreach my $name (keys %$fields) {
+    my $field = $fields->{$name};
+
+    unless ($fields->{$name} = _get_type($fields->{$name}, $analyzer, $language)) {
+      $app->log->warn($name . $UNKNOWN);
+    };
+  };
+
+  # Create new schema
+  my $real_schema = Lucy::Plan::Schema->new;
+
+  # Iterate through all schema keys
+  foreach my $name (keys %$schema) {
+
+    my $ft;
+
+    # Get by field type name
+    unless (ref $schema->{$name}) {
+      $ft = $fields->{$schema->{$name}};
+    }
+
+    # Get by data structure
+    else {
+      $ft = _get_type($schema->{$name}, $analyzer, $language);
+    };
+
+    # Get type
+    unless ($ft) {
+      $app->log->warn($name . $UNKNOWN);
+      next;
+    };
+
+    # Specify fields
+    $real_schema->spec_field(
+      name => $name,
+      type => $ft
+    );
+  };
+
+  # Set schema
+  $plugin->{schema} = $real_schema;
+
+  # No path is given - use temporary path
+  my $tempdir;
+  unless ($param->{path}) {
+    $tempdir = tempdir();
+    for ($app->log) {
+      $_->warn('There is no index path given for ' . __PACKAGE__);
+      $_->warn(__PACKAGE__ . ' is now using temporary path ' . $tempdir);
+    };
+    $plugin->path(undef, $tempdir);
+  }
+
+  # Path is given
+  else {
+    $plugin->path(undef, $param->{path});
+  };
+
+  # Modify later, just in case
+  $plugin->{query} = Lucy::Search::QueryParser->new(
+    schema => $plugin->{schema}
+  );
+
+  # on init:
+  # delete $plugin->{searcher};
+
+  # Cleanup later
+  # lucy.highlight
 };
 
 
-# Create query object
-sub query_obj {
-  my $shift;
-  shift->{query}->parse( "$_[0]" )
+# Search method
+sub search {
+  my $self = shift;
+  my $index = shift;
+
+  # Get callback
+  my $cb = pop
+    if $_[-1] && ref $_[-1] && ref $_[-1] eq 'CODE';
+
+  my %param = @_;
+
+  # Get query
+  my $query = $index->query or return '';
+
+  # Query may be a string
+  $query = $self->query_obj($query) unless blessed $query;
+
+  # Query may be a stringifiable object
+  unless ($query->isa('Lucy::Search::Query')) {
+    $query = $self->query_obj("$query");
+  };
+
+  # Create highlighters
+  if ($param{highlight}) {
+
+    # Multiple highlights have to be objects
+    my $hls = ref $param{highlight} ?
+      $param{highlight} : { $param{highlight} => {} };
+
+    my %highlight;
+
+    # Create highlighter for each field
+    foreach my $hl (keys %$hls) {
+      my $obj = $hls->{$hl};
+
+      # Create a lucy highlight object
+      my $highlight = Lucy::Highlight::Highlighter->new(
+	field    => $hl,
+	searcher => $self->searcher,
+	query    => $query,
+	excerpt_length => $obj->{excerpt_length}
+	  // $self->_highlighter('excerpt_length') // 200
+	);
+
+      my $pre_tag  = $obj->{pre_tag}  // $self->_highlighter('pre_tag');
+      my $post_tag = $obj->{post_tag} // $self->_highlighter('post_tag');
+
+      # Maybe set per highlighter
+      $highlight->set_pre_tag($pre_tag)   if $pre_tag;
+      $highlight->set_post_tag($post_tag) if $post_tag;
+
+      $highlight{$hl} = $highlight;
+    };
+
+    # Set highlight stash
+    $index->controller->stash('lucy.highlight' => \%highlight);
+  };
+
+  # Find the hits
+  my $hits = $self->searcher->hits(
+    query      => $query,
+    offset     => $param{start_index} // $index->start_index,
+    num_wanted => $index->items_per_page
+  );
+
+  $index->total_results($hits->total_hits);
+
+  my (@hits, $hit);
+  push(@hits, $hit) while $hit = $hits->next;
+
+  # Set hits
+  $index->results(@hits);
+
+  return $cb->($index) if $cb;
+  return 1;
 };
 
 
 # Add new documents to the index
 sub add {
   my $self = shift;
+  my $index = shift;
 
   my $commit = 1;
   if ($_[-1] eq '-no_commit') {
@@ -53,7 +209,8 @@ sub add {
     pop;
   };
 
-  my $i = $self->_new_indexer(create => 1) or return;
+  my $i = $self->_new_indexer(create => 1)
+    or return;
 
   foreach my $doc (@_) {
     if (exists $doc->{-boost}) {
@@ -77,6 +234,7 @@ sub add {
 # Remove documents from the index
 sub delete {
   my $self = shift;
+  my $index = shift;
 
   my $commit = 1;
   if ($_[-1] eq '-no_commit') {
@@ -120,215 +278,63 @@ sub commit {
 };
 
 
-# Establish engine
-sub register {
-  my ($plugin, $mojo, $param) = @_;
-  $param ||= {};
+# Extract snippet
+sub snippet {
+  my ($self, $index, $field) = @_;
+  my $c = $index->controller;
 
-  # Load parameter from Config file
-  if (my $config_param = $mojo->config('Lucy')) {
-    $param = { %$config_param, %$param };
+  state $msg = 'You need to define this highlighter';
+
+  my $hl = $c->stash('lucy.highlight');
+
+  # No highlighter object was defined
+  unless ($hl) {
+    $c->app->log->warn($msg);
+    return '';
   };
 
-  # Create a schema
-  my $schema = $param->{schema};
-  unless ($schema) {
-    $mojo->log->warn('No schema given for ' . __PACKAGE__);
-    return;
+  return '' unless $c->stash('search.hit');
+
+  # Get highlighter (the first if nothing is defined)
+  my ($highlight) = $field ? $hl->{$field} : values %$hl;
+
+  # No highlighter defined
+  unless ($highlight) {
+    $c->app->log->warn($msg);
+    return '';
   };
 
-  $plugin->{truncate} = delete $param->{truncate};
-
-  # Get language information
-  my $language = $param->{language} // 'en';
-
-  # Set highlighter parameters
-  $plugin->_highlighter($param->{highlighter} // {});
-
-  # Possibly an analyzer is given
-  my $analyzer = $param->{analyzer};
-
-  # Get fields
-  my $fields = $param->{fields} // {};
-
-  # Iterate through all schema keys
-  foreach my $name (keys %$fields) {
-    my $field = $fields->{$name};
-
-    unless ($fields->{$name} = _get_type($fields->{$name}, $analyzer, $language)) {
-      $mojo->log->warn($name . $UNKNOWN);
-    };
-  };
-
-  my $real_schema = Lucy::Plan::Schema->new;
-
-  # Iterate through all schema keys
-  foreach my $name (keys %$schema) {
-
-    my $ft;
-
-    # Get by field type name
-    unless (ref $schema->{$name}) {
-      $ft = $fields->{$schema->{$name}};
-    }
-
-    # Get by data structure
-    else {
-      $ft = _get_type($schema->{$name}, $analyzer, $language);
-    };
-
-    # Get type
-    unless ($ft) {
-      $mojo->log->warn($name . $UNKNOWN);
-      next;
-    };
-
-    # Specify fields
-    $real_schema->spec_field(
-      name => $name,
-      type => $ft
-    );
-  };
-
-  # Set schema
-  $plugin->{schema} = $real_schema;
-
-  # No path is given - use temporary path
-  my $tempdir;
-  unless ($param->{path}) {
-    $tempdir = tempdir();
-    for ($mojo->log) {
-      $_->warn('There is no index path given for ' . __PACKAGE__);
-      $_->warn(__PACKAGE__ . ' is now using temporary path ' . $tempdir);
-    };
-    $plugin->path($tempdir);
-  }
-
-  # Path is given
-  else {
-    $plugin->path($param->{path});
-  };
-
-  # Modify later, just in case
-  $plugin->{query} = Lucy::Search::QueryParser->new(
-    schema => $plugin->{schema}
-  );
-
-  # Add lucy_crawl command
-  # push @{$mojo->commands->namespaces}, __PACKAGE__;
-
-  # Establish lucy helper
-  $mojo->helper(
-    lucy => sub { $plugin }
-  );
-
-  # Establish lucy_snippet helper
-  $mojo->helper(
-    lucy_snippet => sub {
-      my ($c, $field) = @_;
-
-      state $msg = 'You need to define this highlighter';
-
-      my $hl = $c->stash('lucy.highlight');
-
-      # No highlighter object was defined
-      unless ($hl) {
-	$c->app->log->warn($msg);
-	return '';
-      };
-
-      return '' unless $c->stash('search.hit');
-
-      # Get highlighter (the first if nothing is defined)
-      my ($highlight) = $field ? $hl->{$field} : values %$hl;
-
-      # No highlighter defined
-      unless ($highlight) {
-	$c->app->log->warn($msg);
-	return '';
-      };
-
-      return b($highlight->create_excerpt($c->stash('search.hit')) || '');
-    }
-  );
-
-  # Initialize object
-  if ($param->{on_init} && ($tempdir || !(-d $plugin->path))) {
-    weaken $mojo;
-    $param->{on_init}->($mojo);
-    delete $plugin->{searcher};
-  };
+  return b($highlight->create_excerpt($c->stash('search.hit')) || '');
 };
 
 
-# Search method
-sub search {
-  my ($self, $c, %param) = @_;
-  my $query = $c->stash('search.searchTerms') or return '';
 
-  # Query may be a string
-  $query = $self->query_obj($query) unless blessed $query;
+# The searcher object
+sub searcher {
+  my $plugin = shift;
 
-  # Query may be a stringifiable object
-  unless ($query->isa('Lucy::Search::Query')) {
-    $query = $self->query_obj("$query");
+  # Has only to be rebuild if something changed
+  return ($plugin->{searcher} //= Lucy::Search::IndexSearcher->new(
+    index => $plugin->path
+  ));
+};
+
+
+# The index path
+sub path {
+  my $plugin = shift;
+  if (@_ == 2) {
+    return $plugin->{path} = pop;
   };
+  return $plugin->{path}
+};
 
-  # Create highlighters
-  if ($param{highlight}) {
 
-    # Multiple highlights have to be objects
-    my $hls = ref $param{highlight} ?
-      $param{highlight} : { $param{highlight} => {} };
-
-    my %highlight;
-
-    # Create highlighter for each field
-    foreach my $hl (keys %$hls) {
-      my $obj = $hls->{$hl};
-
-      # Create a lucy highlight object
-      my $highlight = Lucy::Highlight::Highlighter->new(
-	field    => $hl,
-	searcher => $self->searcher,
-	query    => $query,
-	excerpt_length => $obj->{excerpt_length}
-	  // $self->_highlighter('excerpt_length') // 200
-	);
-
-      my $pre_tag  = $obj->{pre_tag}  // $self->_highlighter('pre_tag');
-      my $post_tag = $obj->{post_tag} // $self->_highlighter('post_tag');
-
-      # Maybe set per highlighter
-      $highlight->set_pre_tag($pre_tag)   if $pre_tag;
-      $highlight->set_post_tag($post_tag) if $post_tag;
-
-      $highlight{$hl} = $highlight;
-    };
-
-    # Set highlight stash
-    $c->stash('lucy.highlight' => \%highlight);
-  };
-
-  # Get stash information
-  my $count = $c->stash('search.count');
-  my $start_index = ($c->stash('search.startPage') - 1) * $count;
-
-  # Find the hits
-  my $hits = $self->searcher->hits(
-    query      => $query,
-    offset     => $param{startIndex} // $start_index // 0,
-    num_wanted => $count
-  );
-
-  # Set total result number
-  $c->stash('search.totalResults' => $hits->total_hits);
-
-  my (@hits, $hit);
-  push(@hits, $hit)  while $hit = $hits->next;
-
-  # Set hits
-  $c->stash('search.hits' => \@hits);
+# Create query object
+sub query_obj {
+  my $plugin = shift;
+  my $q = pop;
+  $plugin->{query}->parse( "$q" );
 };
 
 
@@ -420,7 +426,7 @@ __END__
 
 =head1 NAME
 
-Mojolicious::Plugin::Search::Lucy - Lucy engine for Mojolicious::Plugin::Search
+Mojolicious::Plugin::Search::Lucy - Lucy Engine for Mojolicious::Plugin::Search
 
 
 =head1 SYNOPSIS
@@ -440,19 +446,19 @@ Mojolicious::Plugin::Search::Lucy - Lucy engine for Mojolicious::Plugin::Search
     }
   };
 
-  # Add documents to the index
-  $c->lucy->add(
+  # Add document to the index
+  $c->search->add({
     title => 'My first Article',
     content => 'This is my first blog post'
-  );
+  });
 
   # Show search results in a template
   %= search highlight => 'content', begin
-  <p>Matches: <%= stash 'search.totalResults' %></p>
-  %=   search_hits begin
+  <p>Matches: <%= search->total_results %></p>
+  %=   search_results begin
   <div>
     <h1><%= link_to $_->{title} => $_->{url} %></h1>
-    <p><%= lucy_highlight %></p>
+    <p><%= search->snippet %></p>
     <p class="score"><%= $_->get_score %></p>
   </div>
   %   end
@@ -597,12 +603,6 @@ Defaults to L<Lucy::Analysis::PolyAnalyzer> with the given C<language>.
 The analyzer only applies to C<FullText> fields.
 
 
-=item B<on_init>
-
-Initialize index creation. Expects an anonymous subroutine,
-with the application passed to.
-
-
 =item B<highlighter>
 
 Set the default values for highlighting as a hash reference.
@@ -628,50 +628,22 @@ Defaults to C<200> characters.
 =back
 
 
-
-=head1 HELPERS
-
-=head2 lucy
-
-  $c->lucy->add({
-    title => 'My first article',
-    content => 'This is gonna great!'
-  });
-
-Returns the plugins object to access all object attributes and methods.
-
-
-=head2 lucy_snippet
-
-%= search highlight => 'content', begin
-%=  search_hits begin
-<p><%= lucy_snippet 'content' %></p>
-%   end
-% end
-
-Returns the highlighted snippet of the current match
-inside a L</search_hits> block.
-Takes an optional field parameter or takes the
-alphabetically first field defined in the C<highlight>
-parameter of L</search>.
-
-
 =head2 search
 
   %= search highlight => 'content', begin
-  <p><%= stast 'search.totalResults' %> matches found</p>
-  %=   search_hits begin
+  <p><%= search->total_results %> matches found</p>
+  %=   search_results begin
   <div>
     <h1><%= link_to $_->{title} => $_->{url} %></h1>
-    <p><%= lucy_snippet %></p>
+    <p><%= search->snippet %></p>
     <p class="score"><%= $_->get_score %></p>
   </div>
   %   end
   % end
 
 The L<search> helper is established by L<Mojolicious::Plugin::Search>.
-When used in conjunction with the L<Lucy> engine, the following parameters are
-accepted:
+When used in conjunction with the L<Lucy> engine, the following additional
+parameters are accepted:
 
 =over 4
 
@@ -686,32 +658,34 @@ accepted:
   }
 
 Expects all fields to be prepared for highlighted
-snippets in L<search_hits>. A single field can be given as a string.
+snippets in L<search_results>. A single field can be given as a string.
 In case of multiple fields, they have to be keys in a hash reference.
 The values of the hash reference are hash references accepting the same
 parameters as the C<highlight> parameter in the configuration.
 
 =back
 
-The stash parameters C<search.count>, C<search.startPage> are recognized.
-The stash parameter C<search.searchTerms> can either contain a
-query string or a L<Lucy::Search::Query> object.
+L<Mojolicious::Plugin::Search::Lucy> accepts the query to be a
+string or a L<Lucy::Search::Query> object.
 
 
-=head2 search_hits
+=head2 search_results
 
-The L<search_hits> helper is established by L<Mojolicious::Plugin::Search>.
+The L<search_results> helper is established by L<Mojolicious::Plugin::Search>.
 When used in conjunction with the L<Lucy> engine,
-The current L<Lucy::Document::HitDoc> is stored in C<$_>.
+The current L<Lucy::Document::HitDoc> is stored in C<$_> and in
+the stash value C<search.hit>.
 
 
 =head1 OBJECT ATTRIBUTES
 
-These attributes can be accessed using the plugin object helper L</lucy>.
+These attributes can be accessed using the object helper
+L<Mojolicious::Plugin::Search/search|search>.
+
 
 =head2 path
 
-  print $plugin->path;
+  print $c->search->path;
 
 The path to the index. Has to be set on registration,
 otherwise a temporary directory is used.
@@ -719,25 +693,27 @@ otherwise a temporary directory is used.
 
 =head2 searcher
 
-  $plugin->searcher;
+  $c->search->searcher;
 
 The associated L<Lucy::Search::IndexSearcher> object.
 
 
 =head2 query_obj
 
-  $plugin->query_obj("tree OR cat");
+  $c->search->query_obj("tree OR cat");
 
 Create a L<Lucy::Search::Query> object based on a query string and
 the associated query parser.
 
+
 =head1 OBJECT METHODS
 
-These methods can be accessed using the plugin object helper L</lucy>.
+These methods can be accessed using the object helper
+L<Mojolicious::Plugin::Search/search|search>.
 
 =head2 add
 
-  $c->lucy->add({
+  $c->search->add({
     title => 'My first Article',
     content => 'This is my first blog post'
   },
@@ -747,7 +723,7 @@ These methods can be accessed using the plugin object helper L</lucy>.
     -boost => 2.3
   });
 
-  $c->lucy->add({ title => 'yeah' }, -no_commit)
+  $c->search->add({ title => 'yeah' }, -no_commit)
 
 Add new documents to the index. Accepts an array of hash references
 containing field and value pairs. The special parameter C<-boost>
@@ -757,12 +733,20 @@ commit is released.
 If this is not wanted, a final C<-no_commit> will prevent this behaviour.
 
 
+=head2 commit
+
+  $c->search->commit;
+
+Commit changes to the index. This is only necessary if automated commits after
+L</add> and L</delete> were deactivated.
+
+
 =head2 delete
 
-  $c->lucy->delete("tree");
-  $c->lucy->delete(title => "tree");
-  $c->lucy->delete(id => [6,7,8]);
-  $c->lucy->delete(id => [6,7,8], -no_commit);
+  $c->search->delete("tree");
+  $c->search->delete(title => "tree");
+  $c->search->delete(id => [6,7,8]);
+  $c->search->delete(id => [6,7,8], -no_commit);
 
 Delete documents from the index by search terms,
 by search terms restricted to a certain field, or by document identifier.
@@ -771,12 +755,20 @@ After all deletes are performed an automated commit is released.
 If this is not wanted, a final C<-no_commit> will prevent this behaviour
 
 
-=head2 commit
+=head2 snippet
 
-  $c->lucy->commit;
+  %# In templates:
+  %= search highlight => 'content', begin
+  %=  search_results begin
+    <p><%= search->snippet 'content' %></p>
+  %   end
+  % end
 
-Commit changes to the index. This is only necessary if automated commits after
-L</add> and L</delete> were deactivated.
+Returns the highlighted snippet of the current match
+inside a L</search_results> block.
+Takes an optional field parameter or takes the
+alphabetically first field defined in the C<highlight>
+parameter of L</search>.
 
 
 =head1 AVAILABILITY

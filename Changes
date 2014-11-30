@@ -1,3 +1,11 @@
+0.03 2014-11-30
+        - Pretty much a rewrite to support non-blocking
+	  and limit use of the stash.
+	- Decoupling of OpenSearch.
+
+0.02 2014-06-08
+        - No more transparent support of query parameters.
+
 0.01 2014-05-20
         - Initial submission to GitHub.
         - Initial submission to CPAN.
