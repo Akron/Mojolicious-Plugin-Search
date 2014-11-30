@@ -1,3 +1,0 @@
-    <opensearch:totalResults><%= stash 'search.totalResults' %></opensearch:totalResults>
-    <opensearch:startIndex><%= (stash('search.startPage') - 1) * stash('search.itemsPerPage') %></opensearch:startIndex>
-    <opensearch:itemsPerPage><%= stash 'search.itemsPerPage' %></opensearch:itemsPerPage>
