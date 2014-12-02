@@ -1,3 +1,7 @@
+0.04 2014-12-01
+        - Pass engine_class to register for easy adding
+	  index attributes.
+
 0.03 2014-11-30
         - Pretty much a rewrite to support non-blocking
 	  and limit use of the stash.

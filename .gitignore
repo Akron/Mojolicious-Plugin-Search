@@ -16,5 +16,4 @@ t/examples/*
 *.log
 *.db
 *.old
-.*
 !.gitignore

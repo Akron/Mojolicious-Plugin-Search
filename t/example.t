@@ -41,6 +41,7 @@ get '/search-template' => sub {
    <head><title><%= search->query %></title></head>
   <body>
 <p>Hits: <span id="totalResults"><%= search->total_results %></span></p>
+<p id="indexname"><%= search->index_name %></p>
 %=  search_results begin
   <div>
     <h1><%= $_->{title} %></h1>
@@ -148,6 +149,7 @@ $t->put_ok('/' => json => {
 
 $t->get_ok('/search-template?q=example')
   ->text_is('#totalResults', 4)
+  ->text_is('#indexname', 'My Example engine')
   ->text_is('title', 'example')
   ->text_is('div:nth-child-of-type(1) > h1', 'Test')
   ->text_is('div:nth-child-of-type(1) > p',  'My first example')

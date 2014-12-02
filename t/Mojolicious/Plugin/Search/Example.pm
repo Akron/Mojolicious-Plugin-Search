@@ -6,7 +6,10 @@ our @DOCS = ();
 
 # Register plugin
 sub register {
-  my ($self, $mojo, $param) = @_;
+  my ($self, $mojo, $index_class, $param) = @_;
+
+  # Add attributes to the index class
+  $index_class->attr(index_name => 'My Example engine');
 
   # Initialize some documents
   @DOCS = (

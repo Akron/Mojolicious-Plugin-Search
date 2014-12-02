@@ -5,10 +5,11 @@ use Scalar::Util 'looks_like_number';
 use Mojo::Util qw/camelize/;
 use Mojo::ByteStream 'b';
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 # TODO: Improve the documentation by using similar
 #       attribute style as in M::P::S::Lucy
+# TODO: Check for failing engines (e.g. methods missing)
 
 # Maximum number of items per page
 has items_per_page => 25;
@@ -40,8 +41,8 @@ sub register {
   $engine = __PACKAGE__ . '::' . $engine if index($engine, '::') < 0;
 
   # Load and register the engine
-  my $e = $app->plugins->load_plugin($engine);
-  $e->register($app, $param);
+  my $e = $app->plugins->load_plugin($engine) or return;
+  $e->register($app, __PACKAGE__ . '::Index', $param);
 
   # No search method in plugin
   unless ($e->can('search')) {
@@ -165,10 +166,9 @@ sub register {
       # Iterate over results
       my $string = $index->results->map(
 	sub {
-	  $c->stash('search.hit' => $_);
-
 	  # Call hit callback
-	  local $_ = $_;
+	  $c->stash('search.hit' => $_);
+	  local $_ = $_[0];
 	  return $cb->($_);
 	})->join;
 

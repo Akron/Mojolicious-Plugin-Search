@@ -24,7 +24,7 @@ our $UNKNOWN = ' has an unknown field type';
 
 # Establish engine
 sub register {
-  my ($plugin, $app, $param) = @_;
+  my ($plugin, $app, $index_class, $param) = @_;
   $param ||= {};
 
   # Create a schema
