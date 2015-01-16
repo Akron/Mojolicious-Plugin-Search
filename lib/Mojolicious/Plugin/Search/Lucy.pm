@@ -27,6 +27,9 @@ sub register {
   my ($plugin, $app, $index_class, $param) = @_;
   $param ||= {};
 
+  # Add 'lucy' command
+  push @{$app->commands->namespaces}, __PACKAGE__;
+
   # Create a schema
   my $schema = $param->{schema};
   unless ($schema) {
@@ -209,7 +212,7 @@ sub add {
     pop;
   };
 
-  my $i = $self->_new_indexer(create => 1)
+  my $i = $self->new_indexer(create => 1)
     or return;
 
   foreach my $doc (@_) {
@@ -242,7 +245,7 @@ sub delete {
     pop;
   };
 
-  my $i = $self->_new_indexer or return;
+  my $i = $self->new_indexer or return;
 
   # delete by query
   if (@_ == 1) {
@@ -272,7 +275,7 @@ sub delete {
 # Commit changes to the index
 sub commit {
   my $self = shift;
-  my $i = $self->_new_indexer or return;
+  my $i = $self->new_indexer or return;
   delete $self->{searcher};
   return $i->commit;
 };
@@ -338,9 +341,18 @@ sub query_obj {
 };
 
 
+# Return schema
+sub schema {
+  shift->{schema};
+};
+
+
 # Get new indexer
-sub _new_indexer {
+sub new_indexer {
   my $self = shift;
+
+  # Remove helper
+  shift if ref $_[0];
 
   return Lucy::Index::Indexer->new(
     index    => $self->path,
@@ -691,6 +703,13 @@ The path to the index. Has to be set on registration,
 otherwise a temporary directory is used.
 
 
+=head2 schema
+
+  my $schema = $c->search->schema;
+
+The associated L<Lucy::Plan::Schema> object.
+
+
 =head2 searcher
 
   $c->search->searcher;
@@ -700,10 +719,17 @@ The associated L<Lucy::Search::IndexSearcher> object.
 
 =head2 query_obj
 
-  $c->search->query_obj("tree OR cat");
+  my $q = $c->search->query_obj("tree OR cat");
 
 Create a L<Lucy::Search::Query> object based on a query string and
 the associated query parser.
+
+
+=head2 new_indexer
+
+  my $indexer = $c->search->new_indexer;
+
+A new L<Lucy::Index::Indexer> object associated to the index.
 
 
 =head1 OBJECT METHODS
@@ -740,6 +766,7 @@ If this is not wanted, a final C<-no_commit> will prevent this behaviour.
 Commit changes to the index. This is only necessary if automated commits after
 L</add> and L</delete> were deactivated.
 
+B<WARNING> This currently doesn't work!
 
 =head2 delete
 

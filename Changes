@@ -1,3 +1,6 @@
+0.05 2015-01-16
+        - Added lucy command.
+
 0.04 2014-12-01
         - Pass engine_class to register for easy adding
 	  index attributes.

@@ -5,7 +5,7 @@ use Scalar::Util 'looks_like_number';
 use Mojo::Util qw/camelize/;
 use Mojo::ByteStream 'b';
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 # TODO: Improve the documentation by using similar
 #       attribute style as in M::P::S::Lucy
