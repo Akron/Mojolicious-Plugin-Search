@@ -16,7 +16,7 @@ WriteMakefile(
   PREREQ_PM => {
     'Mojolicious' => 5.67,
     'Mojolicious::Plugin::Util::Endpoint' => 0.16,
-    'Lucy' => '0.003003'
+    'Lucy' => '0.006000004'
   },
   LICENSE      => 'artistic_2',
   META_MERGE   => {

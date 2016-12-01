@@ -55,7 +55,9 @@ sub register {
   foreach my $name (keys %$fields) {
     my $field = $fields->{$name};
 
-    unless ($fields->{$name} = _get_type($fields->{$name}, $analyzer, $language)) {
+    unless ($fields->{$name} = _get_type(
+      $fields->{$name}, $analyzer, $language
+    )) {
       $app->log->warn($name . $UNKNOWN);
     };
   };
@@ -229,6 +231,7 @@ sub add {
     delete $self->{searcher};
     return $i->commit;
   };
+  # Todo: Otherwise collect the indexers!
 
   return 1;
 };
@@ -451,7 +454,7 @@ Mojolicious::Plugin::Search::Lucy - Lucy Engine for Mojolicious::Plugin::Search
       title => 'fulltext',
       content => {
         type => 'fulltext',
-        highlightable => 1
+        highlightable => 1,
         stored => 1
       },
       url => 'string'
@@ -757,6 +760,7 @@ can be used to lift or lower the ranking of the document in search
 results. After all articles in the array are added an automated
 commit is released.
 If this is not wanted, a final C<-no_commit> will prevent this behaviour.
+In this case, the method returns the indexer.
 
 
 =head2 commit
