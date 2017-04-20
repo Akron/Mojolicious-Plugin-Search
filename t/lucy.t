@@ -3,6 +3,7 @@ use Test::Mojo;
 use Test::More;
 use Mojolicious::Lite;
 use Mojo::ByteStream 'b';
+use Mojo::File;
 use lib '../lib', 'lib', 't';
 use File::Temp 'tempdir';
 
@@ -48,8 +49,8 @@ plugin Search => {
     my @docs;
     foreach my $filename (readdir(SAMPLE)) {
       if ($filename =~ /\.txt$/) {
-	my $text = b($path . '/' . $filename)->slurp;
-	$text =~ /\A(.+?)^\s+(.*)/ms
+        my $text = Mojo::File->new($path . '/' . $filename)->slurp;
+        $text =~ /\A(.+?)^\s+(.*)/ms
 	  or die 'Can\'t extract title/bodytext';
 
 	my ($title, $bodytext) = ($1, $2);

@@ -14,9 +14,9 @@ WriteMakefile(
     'File::Temp' => 0
   },
   PREREQ_PM => {
-    'Mojolicious' => 5.67,
-    'Mojolicious::Plugin::Util::Endpoint' => 0.16,
-    'Lucy' => '0.006000004'
+    'Mojolicious' => 7.15,
+    'Mojolicious::Plugin::Util::Endpoint' => 0.19,
+    'Lucy' => '0.006001'
   },
   LICENSE      => 'artistic_2',
   META_MERGE   => {
