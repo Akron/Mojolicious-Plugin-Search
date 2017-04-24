@@ -35,7 +35,7 @@ sub start_index {
   };
 
   return $self->{start_index} //
-    ($self->start_page - 1) * $self->items_per_page;
+    ($self->start_page - 1) * ($self->items_per_page || 1);
 };
 
 
