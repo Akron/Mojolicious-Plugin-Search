@@ -5,7 +5,7 @@ use Scalar::Util 'looks_like_number';
 use Mojo::Util qw/camelize/;
 use Mojo::ByteStream 'b';
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 # TODO: Improve the documentation by using similar
 #       attribute style as in M::P::S::Lucy
@@ -303,7 +303,7 @@ Mojolicious::Plugin::Search - Search Engines for Mojolicious
 L<Mojolicious::Plugin::Search> is a base plugin to add
 search capabilities to Mojolicious.
 
-B<This is early software, please use it with care! Things may change until it is on CPAN!>
+B<This is early software, please use it with care! Things may change until it is on CPAN! It is also likely to be renamed to be Lucy-specific again.>
 
 
 =head1 METHODS
@@ -435,7 +435,7 @@ L<Mojolicious::Plugin::Util::Endpoint>.
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2014, L<Nils Diewald|http://nils-diewald.de/>.
+Copyright (C) 2014-2018, L<Nils Diewald|http://nils-diewald.de/>.
 
 This program is free software, you can redistribute it
 and/or modify it under the terms of the Artistic License version 2.0.

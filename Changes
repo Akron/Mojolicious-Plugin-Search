@@ -1,3 +1,8 @@
+0.08 2018-10-09
+        - Fixed test suite for Mojolicious > 7.79.
+          (Was broken before, but accepted until Mojo::DOM::CSS
+          became more correct)
+
 0.07 2017-04-24
         - Updated to recent version of Mojolicious.
         - Fixed minor issue for unset items_per_page value.

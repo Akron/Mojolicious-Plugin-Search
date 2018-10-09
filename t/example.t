@@ -148,67 +148,70 @@ $t->put_ok('/' => json => {
 })->content_is('fine');
 
 $t->get_ok('/search-template?q=example')
+  ->status_is(200)
+  ->text_is('#error','')
   ->text_is('#totalResults', 4)
   ->text_is('#indexname', 'My Example engine')
   ->text_is('title', 'example')
-  ->text_is('div:nth-child-of-type(1) > h1', 'Test')
-  ->text_is('div:nth-child-of-type(1) > p',  'My first example')
-  ->text_is('div:nth-child-of-type(2) > h1', 'Example!')
-  ->text_is('div:nth-child-of-type(2) > p',  'My second example')
-  ->text_is('div:nth-child-of-type(3) > h1', 'New example Title 1')
-  ->text_is('div:nth-child-of-type(3) > p',  'This is a new example')
-  ->text_is('div:nth-child-of-type(4) > h1', 'New example Title 2')
-  ->text_is('div:nth-child-of-type(4) > p',  'And another test');
+  ->text_is('div:nth-of-type(1) h1', 'Test')
+  ->text_is('div:nth-of-type(1) > p',  'My first example')
+  ->text_is('div:nth-of-type(2) > h1', 'Example!')
+  ->text_is('div:nth-of-type(2) > p',  'My second example')
+  ->text_is('div:nth-of-type(3) > h1', 'New example Title 1')
+  ->text_is('div:nth-of-type(3) > p',  'This is a new example')
+  ->text_is('div:nth-of-type(4) > h1', 'New example Title 2')
+  ->text_is('div:nth-of-type(4) > p',  'And another test');
+
 
 $t->get_ok('/search-template?q=second')
   ->text_is('#totalResults', 1)
-  ->text_is('div:nth-child-of-type(1) > h1', 'Example!')
-  ->text_is('div:nth-child-of-type(1) > p',  'My second example');
+  ->text_is('div:nth-of-type(1) > h1', 'Example!')
+  ->text_is('div:nth-of-type(1) > p',  'My second example');
 
 $t->get_ok('/search-template?q=example&count=2&page=2')
   ->text_is('#totalResults', 4)
-  ->text_is('div:nth-child-of-type(1) > h1', 'New example Title 1')
-  ->text_is('div:nth-child-of-type(1) > p',  'This is a new example')
-  ->text_is('div:nth-child-of-type(2) > h1', 'New example Title 2')
-  ->text_is('div:nth-child-of-type(2) > p',  'And another test');
+  ->text_is('div:nth-of-type(1) > h1', 'New example Title 1')
+  ->text_is('div:nth-of-type(1) > p',  'This is a new example')
+  ->text_is('div:nth-of-type(2) > h1', 'New example Title 2')
+  ->text_is('div:nth-of-type(2) > p',  'And another test');
 
 # Third deleted
 $t->delete_ok('/2')->content_is('fine');
 
 $t->get_ok('/search-template?q=example&count=2&page=2')
   ->text_is('#totalResults', 3)
-  ->text_is('div:nth-child-of-type(1) > h1', 'New example Title 2')
-  ->text_is('div:nth-child-of-type(1) > p',  'And another test');
+  ->text_is('div:nth-of-type(1) > h1', 'New example Title 2')
+  ->text_is('div:nth-of-type(1) > p',  'And another test');
 
 # Search pre
 $t->get_ok('/search-pre?q=example')
   ->text_is('#totalResults', 3)
-  ->text_is('div:nth-child-of-type(1) > h1', 'Test')
-  ->text_is('div:nth-child-of-type(1) > p',  'My first example')
-  ->text_is('div:nth-child-of-type(2) > h1', 'Example!')
-  ->text_is('div:nth-child-of-type(2) > p',  'My second example')
-  ->text_is('div:nth-child-of-type(3) > h1', 'New example Title 2')
-  ->text_is('div:nth-child-of-type(3) > p',  'And another test');
+  ->text_is('div:nth-of-type(1) > h1', 'Test')
+  ->text_is('div:nth-of-type(1) > p',  'My first example')
+  ->text_is('div:nth-of-type(2) > h1', 'Example!')
+  ->text_is('div:nth-of-type(2) > p',  'My second example')
+  ->text_is('div:nth-of-type(3) > h1', 'New example Title 2')
+  ->text_is('div:nth-of-type(3) > p',  'And another test');
 
 # Search non-blocking with callback
 $t->get_ok('/search-nb?q=example')
   ->text_is('#totalResults', 3)
-  ->text_is('div:nth-child-of-type(1) > h1', 'Test')
-  ->text_is('div:nth-child-of-type(1) > p',  'My first example')
-  ->text_is('div:nth-child-of-type(2) > h1', 'Example!')
-  ->text_is('div:nth-child-of-type(2) > p',  'My second example')
-  ->text_is('div:nth-child-of-type(3) > h1', 'New example Title 2')
-  ->text_is('div:nth-child-of-type(3) > p',  'And another test');
+  ->text_is('div:nth-of-type(1) > h1', 'Test')
+  ->text_is('div:nth-of-type(1) > p',  'My first example')
+  ->text_is('div:nth-of-type(2) > h1', 'Example!')
+  ->text_is('div:nth-of-type(2) > p',  'My second example')
+  ->text_is('div:nth-of-type(3) > h1', 'New example Title 2')
+  ->text_is('div:nth-of-type(3) > p',  'And another test');
 
 # Search non-blocking with template
 $t->get_ok('/search-nb-template?q=example')
   ->text_is('#totalResults', 3)
-  ->text_is('div:nth-child-of-type(1) > h1', 'Test')
-  ->text_is('div:nth-child-of-type(1) > p',  'My first example')
-  ->text_is('div:nth-child-of-type(2) > h1', 'Example!')
-  ->text_is('div:nth-child-of-type(2) > p',  'My second example')
-  ->text_is('div:nth-child-of-type(3) > h1', 'New example Title 2')
-  ->text_is('div:nth-child-of-type(3) > p',  'And another test');
+  ->text_is('div:nth-of-type(1) > h1', 'Test')
+  ->text_is('div:nth-of-type(1) > p',  'My first example')
+  ->text_is('div:nth-of-type(2) > h1', 'Example!')
+  ->text_is('div:nth-of-type(2) > p',  'My second example')
+  ->text_is('div:nth-of-type(3) > h1', 'New example Title 2')
+  ->text_is('div:nth-of-type(3) > p',  'And another test');
 
 # Search directly - access results
 my $c = $t->app->build_controller;
